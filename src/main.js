@@ -390,8 +390,9 @@ const gridUniforms = {
   uSpectrumMode: { value: 0 },
 };
 
-// 碰撞产生的瞬态引力波余波（会在物理主循环中随时间指数衰减归零，避免网格永久晃动）
+// 广义相对论引力波激波（基于爱因斯坦四极矩动能释放）与振铃衰减时标（Ringdown Quasinormal Damping Time）
 let transientWaveBurst = 0.0;
+let ringdownTau = 0.8; // 衰减特征时标（秒），随天体碰撞总质量动态缩放
 
 const gridMat = new THREE.ShaderMaterial({
   vertexShader: gridVertexShader,
@@ -1246,24 +1247,38 @@ function updateSphereMotion(dt) {
           if (rDist <= minDist) {
             if (collisionMode === 'merge') {
               // 碰撞完全非弹性合并：质量守恒与动量守恒
-              const totalMass = (m1.mass || 10.0) + (m2.mass || 10.0);
+              const m1Mass = m1.mass || 10.0;
+              const m2Mass = m2.mass || 10.0;
+              const totalMass = m1Mass + m2Mass;
               const mergedVel = new THREE.Vector3()
-                .copy(m1.velocity).multiplyScalar(m1.mass || 10.0)
-                .addScaledVector(m2.velocity, m2.mass || 10.0)
+                .copy(m1.velocity).multiplyScalar(m1Mass)
+                .addScaledVector(m2.velocity, m2Mass)
                 .divideScalar(totalMass);
               const mergedPos = new THREE.Vector3()
-                .copy(m1.position).multiplyScalar(m1.mass || 10.0)
-                .addScaledVector(m2.position, m2.mass || 10.0)
+                .copy(m1.position).multiplyScalar(m1Mass)
+                .addScaledVector(m2.position, m2Mass)
                 .divideScalar(totalMass);
               const mergedRadius = Math.cbrt(Math.pow(m1.radius, 3) + Math.pow(m2.radius, 3));
+
+              // 物理真实引力波爆发（爱因斯坦四极矩近似）：
+              // 约化质量 mu = (m1 * m2) / (m1 + m2)
+              // 碰撞动能释放 E_loss = 0.5 * mu * |v1 - v2|^2
+              const mu = (m1Mass * m2Mass) / totalMass;
+              const relVelVec = new THREE.Vector3().subVectors(m1.velocity, m2.velocity);
+              const relSpeedSq = relVelVec.lengthSq();
+              const collisionKineticEnergy = 0.5 * mu * relSpeedSq;
+
+              // 碰撞峰值波幅与动能释放及约化质量严格正相关（按显示比例归一化）
+              const gwPeak = Math.min(3.5, 0.015 * collisionKineticEnergy + 0.02 * mu);
+              transientWaveBurst = Math.min(3.5, Math.max(transientWaveBurst, gwPeak));
+
+              // 广义相对论准简正模振铃时标：黑洞/致密星质量越大，振铃衰减时标越长 tau ∝ M
+              ringdownTau = 0.5 + Math.min(2.0, totalMass * 0.015);
 
               m1.mass = totalMass;
               m1.velocity.copy(mergedVel);
               m1.position.copy(mergedPos);
               m1.radius = Math.min(30.0, mergedRadius);
-
-              // 激发出短暂的引力波脉冲（随后将在主循环中快速衰减，不会永久晃动）
-              transientWaveBurst = Math.min(2.5, transientWaveBurst + 1.2);
 
               // 移除被吞噬天体
               const removedId = m2.id;
@@ -1277,17 +1292,27 @@ function updateSphereMotion(dt) {
               // 弹性碰撞反弹
               const nVec = new THREE.Vector3().subVectors(m1.position, m2.position).normalize();
               const overlap = minDist - rDist;
+              const m1Mass = m1.mass || 10.0;
+              const m2Mass = m2.mass || 10.0;
+              const totalMass = m1Mass + m2Mass;
+
               // 分离位置防止粘连
-              m1.position.addScaledVector(nVec, overlap * ((m2.mass || 10.0) / ((m1.mass || 10.0) + (m2.mass || 10.0))));
-              m2.position.addScaledVector(nVec, -overlap * ((m1.mass || 10.0) / ((m1.mass || 10.0) + (m2.mass || 10.0))));
+              m1.position.addScaledVector(nVec, overlap * (m2Mass / totalMass));
+              m2.position.addScaledVector(nVec, -overlap * (m1Mass / totalMass));
 
               const relVel = new THREE.Vector3().subVectors(m1.velocity, m2.velocity).dot(nVec);
               if (relVel < 0) {
                 const e = 0.85; // 恢复系数
-                const impulse = -(1 + e) * relVel / (1.0 / (m1.mass || 10.0) + 1.0 / (m2.mass || 10.0));
-                m1.velocity.addScaledVector(nVec, impulse / (m1.mass || 10.0));
-                m2.velocity.addScaledVector(nVec, -impulse / (m2.mass || 10.0));
-                transientWaveBurst = Math.min(2.0, transientWaveBurst + 0.35);
+                const impulse = -(1 + e) * relVel / (1.0 / m1Mass + 1.0 / m2Mass);
+                m1.velocity.addScaledVector(nVec, impulse / m1Mass);
+                m2.velocity.addScaledVector(nVec, -impulse / m2Mass);
+
+                // 弹性碰撞的反弹加速度突变产生瞬态四极辐射脉冲
+                const mu = (m1Mass * m2Mass) / totalMass;
+                const bounceEnergy = 0.5 * mu * (relVel * relVel);
+                const gwBounce = Math.min(2.0, 0.006 * bounceEnergy + 0.01 * mu);
+                transientWaveBurst = Math.min(2.5, Math.max(transientWaveBurst, gwBounce));
+                ringdownTau = 0.4 + Math.min(1.2, totalMass * 0.01);
               }
             }
             // 'pass' 模式则穿透不作响应
@@ -1867,6 +1892,11 @@ function setIntensityUI(val) {
 function applyPreset(type) {
   transformControls.detach();
   clearMassTrails();
+  transientWaveBurst = 0.0;
+  ringdownTau = 0.8;
+  if (sliderWaves) sliderWaves.value = 0.0;
+  if (valWaves) valWaves.textContent = "0.0";
+  gridUniforms.uWaveAmp.value = 0.0;
   switch (type) {
     case "earthmoon":
       masses = [
@@ -2241,9 +2271,10 @@ function animate(now) {
     }
   });
 
-  // 6. 引力波动态合成与衰减 (静态滑块基础值 + 碰撞引起的瞬态冲击波衰减)
-  if (transientWaveBurst > 0.0005) {
-    transientWaveBurst *= Math.pow(0.88, dt * 60.0);
+  // 6. 物理真实引力波动态衰减 (静态滑块基础值 + 碰撞引起的黑洞准简正模 Ringdown 指数阻尼衰减)
+  if (transientWaveBurst > 0.0003) {
+    // 严格按准简正模 Ringdown 指数衰减：exp(-dt / tau)，能量随光速辐射消散
+    transientWaveBurst *= Math.exp(-dt / Math.max(0.2, ringdownTau));
   } else {
     transientWaveBurst = 0.0;
   }
