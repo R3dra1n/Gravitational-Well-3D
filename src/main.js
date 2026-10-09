@@ -390,6 +390,9 @@ const gridUniforms = {
   uSpectrumMode: { value: 0 },
 };
 
+// 碰撞产生的瞬态引力波余波（会在物理主循环中随时间指数衰减归零，避免网格永久晃动）
+let transientWaveBurst = 0.0;
+
 const gridMat = new THREE.ShaderMaterial({
   vertexShader: gridVertexShader,
   fragmentShader: gridFragmentShader,
@@ -1259,8 +1262,8 @@ function updateSphereMotion(dt) {
               m1.position.copy(mergedPos);
               m1.radius = Math.min(30.0, mergedRadius);
 
-              // 激发出强烈的引力波涟漪
-              gridUniforms.uWaveAmp.value = Math.min(3.0, gridUniforms.uWaveAmp.value + 1.8);
+              // 激发出短暂的引力波脉冲（随后将在主循环中快速衰减，不会永久晃动）
+              transientWaveBurst = Math.min(2.5, transientWaveBurst + 1.2);
 
               // 移除被吞噬天体
               const removedId = m2.id;
@@ -1284,7 +1287,7 @@ function updateSphereMotion(dt) {
                 const impulse = -(1 + e) * relVel / (1.0 / (m1.mass || 10.0) + 1.0 / (m2.mass || 10.0));
                 m1.velocity.addScaledVector(nVec, impulse / (m1.mass || 10.0));
                 m2.velocity.addScaledVector(nVec, -impulse / (m2.mass || 10.0));
-                gridUniforms.uWaveAmp.value = Math.min(2.5, gridUniforms.uWaveAmp.value + 0.35);
+                transientWaveBurst = Math.min(2.0, transientWaveBurst + 0.35);
               }
             }
             // 'pass' 模式则穿透不作响应
@@ -1494,7 +1497,7 @@ if (sliderWaves) {
   sliderWaves.addEventListener('input', (e) => {
     const w = parseFloat(e.target.value);
     valWaves.textContent = w.toFixed(1);
-    gridUniforms.uWaveAmp.value = w;
+    gridUniforms.uWaveAmp.value = w + transientWaveBurst;
   });
 }
 
@@ -1899,6 +1902,7 @@ function applyPreset(type) {
       setIntensityUI(1.0);
       sliderWaves.value = 0.0;
       valWaves.textContent = "0.0";
+      transientWaveBurst = 0.0;
       motionMode = 'nbody';
       selectMotionMode.value = 'nbody';
       break;
@@ -1920,10 +1924,11 @@ function applyPreset(type) {
         }
       ];
       gridUniforms.uWellMul.value = 2.5;
-      gridUniforms.uWaveAmp.value = 0.5;
+      gridUniforms.uWaveAmp.value = 0.0;
       setIntensityUI(2.5);
-      sliderWaves.value = 0.5;
-      valWaves.textContent = "0.5";
+      sliderWaves.value = 0.0;
+      valWaves.textContent = "0.0";
+      transientWaveBurst = 0.0;
       motionMode = 'static';
       selectMotionMode.value = 'static';
       break;
@@ -1958,10 +1963,11 @@ function applyPreset(type) {
         }
       ];
       gridUniforms.uWellMul.value = 1.2;
-      gridUniforms.uWaveAmp.value = 1.6;
+      gridUniforms.uWaveAmp.value = 0.0;
       setIntensityUI(1.2);
-      sliderWaves.value = 1.6;
-      valWaves.textContent = "1.6";
+      sliderWaves.value = 0.0;
+      valWaves.textContent = "0.0";
+      transientWaveBurst = 0.0;
       motionMode = 'nbody';
       selectMotionMode.value = 'nbody';
       collisionMode = 'bounce';
@@ -2013,10 +2019,11 @@ function applyPreset(type) {
         }
       ];
       gridUniforms.uWellMul.value = 1.0;
-      gridUniforms.uWaveAmp.value = 1.2;
+      gridUniforms.uWaveAmp.value = 0.0;
       setIntensityUI(1.0);
-      sliderWaves.value = 1.2;
-      valWaves.textContent = "1.2";
+      sliderWaves.value = 0.0;
+      valWaves.textContent = "0.0";
+      transientWaveBurst = 0.0;
       motionMode = 'nbody';
       selectMotionMode.value = 'nbody';
       collisionMode = 'bounce'; // 关键：三体混沌必须为弹性碰撞反弹，避免因近距离掠过瞬间合并为两星或一星！
@@ -2046,6 +2053,7 @@ function applyPreset(type) {
       setIntensityUI(1.0);
       sliderWaves.value = 0.0;
       valWaves.textContent = "0.0";
+      transientWaveBurst = 0.0;
       sliderDivs.value = 40;
       valDivs.textContent = "40";
       currentDivs = 40;
@@ -2232,6 +2240,15 @@ function animate(now) {
       group.userData.updateAnimation(elapsedTime, dt);
     }
   });
+
+  // 6. 引力波动态合成与衰减 (静态滑块基础值 + 碰撞引起的瞬态冲击波衰减)
+  if (transientWaveBurst > 0.0005) {
+    transientWaveBurst *= Math.pow(0.88, dt * 60.0);
+  } else {
+    transientWaveBurst = 0.0;
+  }
+  const baseWave = sliderWaves ? (parseFloat(sliderWaves.value) || 0.0) : 0.0;
+  gridUniforms.uWaveAmp.value = baseWave + transientWaveBurst;
 
   renderer.render(scene, camera);
 }
