@@ -402,79 +402,190 @@ gridMesh.renderOrder = 10;
 scene.add(gridMesh);
 
 // 7. 天体程序化纹理与外观生成器
-const textureCache = new Map();
+// 7. 全息赛博天体形态构建引擎 (Cyber Holographic Celestial Engine)
+// 彻底淘汰旧版粗糙的 2D 帆布贴图，采用高科技菲涅尔边缘激光发光、自转测地线框外壳与光子吸积环
+function normalizeCelestialType(rawType) {
+  if (!rawType) return 'hologram';
+  if (rawType === 'sun') return 'plasma_star';
+  if (rawType === 'earth') return 'hologram';
+  if (rawType === 'jupiter') return 'pulsar';
+  if (rawType === 'moon') return 'quantum_wire';
+  if (rawType === 'blackhole') return 'singularity';
+  if (rawType === 'crystal') return 'dark_matter';
+  return rawType;
+}
 
-function getPlanetTexture(type, colorHex) {
-  const key = `${type}_${colorHex}`;
-  if (textureCache.has(key)) return textureCache.get(key);
+function disposeGroupRecursive(obj) {
+  if (!obj) return;
+  if (obj.children) {
+    for (let i = obj.children.length - 1; i >= 0; i--) {
+      disposeGroupRecursive(obj.children[i]);
+    }
+  }
+  if (obj.geometry) obj.geometry.dispose();
+  if (obj.material) {
+    if (Array.isArray(obj.material)) {
+      obj.material.forEach(m => m.dispose());
+    } else {
+      obj.material.dispose();
+    }
+  }
+}
 
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
+function createCelestialBodyMesh(m) {
+  const group = new THREE.Group();
+  group.userData = { massId: m.id };
 
-  if (type === 'sun') {
-    const grad = ctx.createLinearGradient(0, 0, 512, 256);
-    grad.addColorStop(0, '#ff9900');
-    grad.addColorStop(0.5, '#ff3300');
-    grad.addColorStop(1, '#ffcc00');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 512, 256);
-    for (let i = 0; i < 70; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255, 255, 200, 0.35)' : 'rgba(160, 20, 0, 0.4)';
-      ctx.beginPath();
-      ctx.arc(Math.random() * 512, Math.random() * 256, Math.random() * 18 + 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (type === 'earth') {
-    ctx.fillStyle = '#0f3854';
-    ctx.fillRect(0, 0, 512, 256);
-    ctx.fillStyle = '#1e7b45';
-    for (let i = 0; i < 28; i++) {
-      ctx.beginPath();
-      ctx.ellipse(Math.random() * 512, Math.random() * 256, Math.random() * 55 + 20, Math.random() * 32 + 10, Math.random() * 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-    for (let i = 0; i < 35; i++) {
-      ctx.beginPath();
-      ctx.ellipse(Math.random() * 512, Math.random() * 256, Math.random() * 70 + 30, Math.random() * 12 + 4, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (type === 'jupiter') {
-    const bands = ['#c88b3a', '#e3bb7b', '#9b582b', '#d8a067', '#87421f', '#f0cf9e'];
-    for (let y = 0; y < 256; y += 8) {
-      ctx.fillStyle = bands[Math.floor((y / 8) % bands.length)];
-      ctx.fillRect(0, y, 512, 8);
-    }
-    ctx.fillStyle = 'rgba(178, 34, 34, 0.75)';
-    ctx.beginPath();
-    ctx.ellipse(320, 160, 45, 25, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (type === 'moon') {
-    ctx.fillStyle = '#7a7d82';
-    ctx.fillRect(0, 0, 512, 256);
-    for (let i = 0; i < 80; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? 'rgba(40, 42, 45, 0.45)' : 'rgba(210, 215, 220, 0.35)';
-      ctx.beginPath();
-      ctx.arc(Math.random() * 512, Math.random() * 256, Math.random() * 16 + 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else if (type === 'blackhole') {
-    ctx.fillStyle = '#050505';
-    ctx.fillRect(0, 0, 512, 256);
-    ctx.fillStyle = 'rgba(255, 120, 0, 0.25)';
-    ctx.fillRect(0, 110, 512, 36);
+  const type = normalizeCelestialType(m.textureType);
+  const color = new THREE.Color(m.color || 0x00ffff);
+  const r = Math.max(1.0, m.radius || 5.0);
+
+  const isSingularity = (type === 'singularity');
+  const isWireOnly = (type === 'quantum_wire');
+  const isPulsar = (type === 'pulsar');
+  const isDarkMatter = (type === 'dark_matter');
+  const isPlasmaStar = (type === 'plasma_star');
+
+  // 1. 核心发光/暗黑球体 (Core Sphere with Fresnel Glow)
+  let coreGeo;
+  if (isDarkMatter) {
+    coreGeo = new THREE.IcosahedronGeometry(r, 1);
   } else {
-    ctx.fillStyle = '#' + new THREE.Color(colorHex).getHexString();
-    ctx.fillRect(0, 0, 512, 256);
+    coreGeo = new THREE.SphereGeometry(r, 32, 32);
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  textureCache.set(key, texture);
-  return texture;
+  const rimColor = isSingularity 
+    ? new THREE.Color(0xffbb33) 
+    : (isPlasmaStar ? new THREE.Color(0xffdd44) : color.clone().offsetHSL(0, 0.08, 0.25));
+
+  const coreMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: color },
+      uRimColor: { value: rimColor },
+      uRimPower: { value: isSingularity ? 5.2 : (isPlasmaStar ? 1.8 : 2.4) },
+      uCoreAlpha: { value: isSingularity ? 1.0 : (isWireOnly ? 0.06 : (isDarkMatter ? 0.35 : 0.52)) },
+      uTime: { value: 0 },
+      uIsSingularity: { value: isSingularity ? 1.0 : 0.0 },
+      uIsPulsar: { value: isPulsar ? 1.0 : 0.0 },
+      uIsDarkMatter: { value: isDarkMatter ? 1.0 : 0.0 },
+      uIsPlasmaStar: { value: isPlasmaStar ? 1.0 : 0.0 }
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      varying vec3 vWorldPos;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        vViewDir = normalize(cameraPosition - wp.xyz);
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform vec3 uRimColor;
+      uniform float uRimPower;
+      uniform float uCoreAlpha;
+      uniform float uTime;
+      uniform float uIsSingularity;
+      uniform float uIsPulsar;
+      uniform float uIsDarkMatter;
+      uniform float uIsPlasmaStar;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      varying vec3 vWorldPos;
+      void main() {
+        float vDotN = clamp(dot(vNormal, vViewDir), 0.0, 1.0);
+        float rim = pow(1.0 - vDotN, uRimPower);
+        
+        if (uIsSingularity > 0.5) {
+          // 奇点视界：纯黑深邃内核，边缘超细高亮光子晕
+          vec3 col = mix(vec3(0.002, 0.002, 0.005), vec3(1.0, 0.85, 0.45), rim * 0.96);
+          gl_FragColor = vec4(col, 1.0);
+          return;
+        }
+        
+        // 全息扫描线与高能脉动
+        float pulse = uIsPulsar > 0.5 ? (sin(uTime * 6.0) * 0.2 + 0.2) : 0.0;
+        float scanline = sin(vWorldPos.y * 3.8 - uTime * 2.2) * 0.5 + 0.5;
+        scanline = pow(scanline, 4.0) * 0.35;
+        
+        vec3 baseCol = uColor * (uIsDarkMatter > 0.5 ? 0.25 : (uIsPlasmaStar > 0.5 ? 0.75 : 0.4));
+        vec3 col = mix(baseCol, uRimColor, rim) + uRimColor * (scanline + pulse);
+        float alpha = clamp(uCoreAlpha + rim * (1.0 - uCoreAlpha) + scanline * 0.25 + pulse, 0.08, 1.0);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: isSingularity,
+    blending: isSingularity ? THREE.NormalBlending : THREE.AdditiveBlending
+  });
+
+  const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+  coreMesh.userData = { massId: m.id };
+  group.add(coreMesh);
+
+  // 2. 全息测地线框外壳 (Geodesic Wireframe Shell - 呼应时空晶格)
+  const wireRadius = r * (isPulsar ? 1.12 : (isDarkMatter ? 1.04 : 1.06));
+  const wireGeo = new THREE.IcosahedronGeometry(wireRadius, isDarkMatter ? 1 : 2);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: isPlasmaStar ? 0xffcc00 : color,
+    wireframe: true,
+    transparent: true,
+    opacity: isSingularity ? 0.0 : (isWireOnly ? 0.88 : (isDarkMatter ? 0.45 : 0.38)),
+    blending: THREE.AdditiveBlending
+  });
+  const wireMesh = new THREE.Mesh(wireGeo, wireMat);
+  wireMesh.userData = { massId: m.id };
+  group.add(wireMesh);
+
+  // 3. 光子轨道环 / 吸积光环 (Photon Ring - 奇点、脉冲星或恒星)
+  const hasRing = (isSingularity || isPulsar || isPlasmaStar);
+  const ringGeo = new THREE.RingGeometry(r * 1.25, r * 1.75, 64);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: isSingularity ? 0xffaa22 : (isPlasmaStar ? 0xff9900 : color),
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: hasRing ? 0.8 : 0.0,
+    blending: THREE.AdditiveBlending
+  });
+  const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+  ringMesh.rotation.x = Math.PI / 2.7;
+  ringMesh.rotation.y = Math.PI / 6.0;
+  ringMesh.visible = hasRing;
+  ringMesh.userData = { massId: m.id };
+  group.add(ringMesh);
+
+  // 4. 内部致密核心质心光点 (Centroid Sparkle)
+  const innerSparkGeo = new THREE.SphereGeometry(r * 0.28, 16, 16);
+  const innerSparkMat = new THREE.MeshBasicMaterial({
+    color: isSingularity ? 0x000000 : 0xffffff,
+    transparent: true,
+    opacity: isSingularity ? 0.0 : 0.95,
+    blending: THREE.AdditiveBlending
+  });
+  const innerSparkMesh = new THREE.Mesh(innerSparkGeo, innerSparkMat);
+  innerSparkMesh.userData = { massId: m.id };
+  group.add(innerSparkMesh);
+
+  // 每帧动画更新逻辑
+  group.userData.updateAnimation = (time, dt) => {
+    coreMat.uniforms.uTime.value = time;
+    if (wireMesh) {
+      wireMesh.rotation.y += dt * 0.4;
+      wireMesh.rotation.x += dt * 0.15;
+    }
+    if (ringMesh && ringMesh.visible) {
+      ringMesh.rotation.z += dt * 0.5;
+    }
+    if (isDarkMatter && coreMesh) {
+      coreMesh.rotation.y += dt * 0.25;
+    }
+  };
+
+  group.position.copy(m.position);
+  return group;
 }
 
 // 8. 天体数据结构与网格管理
@@ -485,8 +596,8 @@ let masses = [
     velocity: new THREE.Vector3(0, 0, 0),
     radius: 5.0,
     mass: 15.0,
-    textureType: 'sun',
-    color: 0xF39C12,
+    textureType: 'hologram',
+    color: 0x00E5FF,
     basePos: new THREE.Vector3(0, 0, 0),
     baseVel: new THREE.Vector3(0, 0, 0),
     orbitAngle: 0,
@@ -501,14 +612,13 @@ let isMassTrailsVisible = true;
 
 function updateMassMeshes() {
   // 清理移除的天体网格
-  for (const [id, mesh] of massMeshesMap.entries()) {
+  for (const [id, group] of massMeshesMap.entries()) {
     if (!masses.find(m => m.id === id)) {
-      if (transformControls.object === mesh) {
+      if (transformControls.object === group) {
         transformControls.detach();
       }
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-      mesh.material.dispose();
+      scene.remove(group);
+      disposeGroupRecursive(group);
       massMeshesMap.delete(id);
     }
   }
@@ -525,43 +635,31 @@ function updateMassMeshes() {
 
   // 创建或更新天体网格与轨迹
   masses.forEach((m) => {
-    let mesh = massMeshesMap.get(m.id);
-    const texture = getPlanetTexture(m.textureType || 'sun', m.color);
+    let group = massMeshesMap.get(m.id);
+    const type = normalizeCelestialType(m.textureType);
 
-    if (!mesh) {
-      const geom = new THREE.SphereGeometry(m.radius, 32, 32);
-      const isCrystal = m.textureType === 'crystal';
-      const isSun = m.textureType === 'sun';
-      const isBH = m.textureType === 'blackhole';
+    const needsRebuild = !group || 
+                         group.userData.lastRadius !== m.radius || 
+                         group.userData.lastType !== type || 
+                         group.userData.lastColor !== m.color;
 
-      const mat = new THREE.MeshStandardMaterial({
-        map: isCrystal ? null : texture,
-        color: isCrystal ? m.color : 0xffffff,
-        metalness: isCrystal ? 0.25 : 0.1,
-        roughness: isCrystal ? 0.35 : 0.6,
-        emissive: isSun ? 0xff4400 : (isBH ? 0x000000 : 0x111111),
-        emissiveIntensity: isSun ? 0.6 : (isBH ? 0.0 : 0.2),
-        transparent: isCrystal,
-        opacity: isCrystal ? 0.88 : 1.0,
-        depthWrite: true,
-      });
-      mesh = new THREE.Mesh(geom, mat);
-      mesh.renderOrder = 5;
-      mesh.userData = { massId: m.id };
-      scene.add(mesh);
-      massMeshesMap.set(m.id, mesh);
+    if (needsRebuild) {
+      const isAttached = group && (transformControls.object === group);
+      if (group) {
+        scene.remove(group);
+        disposeGroupRecursive(group);
+      }
+      group = createCelestialBodyMesh(m);
+      group.userData.lastRadius = m.radius;
+      group.userData.lastType = type;
+      group.userData.lastColor = m.color;
+      scene.add(group);
+      massMeshesMap.set(m.id, group);
+      if (isAttached) {
+        transformControls.attach(group);
+      }
     } else {
-      const isCrystal = m.textureType === 'crystal';
-      const isSun = m.textureType === 'sun';
-      const isBH = m.textureType === 'blackhole';
-
-      mesh.material.map = isCrystal ? null : texture;
-      mesh.material.color.setHex(isCrystal ? m.color : 0xffffff);
-      mesh.material.emissive.setHex(isSun ? 0xff4400 : (isBH ? 0x000000 : 0x111111));
-      mesh.material.emissiveIntensity = isSun ? 0.6 : (isBH ? 0.0 : 0.2);
-      mesh.material.transparent = isCrystal;
-      mesh.material.opacity = isCrystal ? 0.88 : 1.0;
-      mesh.material.needsUpdate = true;
+      group.position.copy(m.position);
     }
 
     // 创建或更新天体运行轨迹线
@@ -583,12 +681,6 @@ function updateMassMeshes() {
       scene.add(trailLine);
       trailObj = { line: trailLine, points: [] };
       massTrailsMap.set(m.id, trailObj);
-    }
-
-    mesh.position.copy(m.position);
-    if (mesh.geometry.parameters.radius !== m.radius) {
-      mesh.geometry.dispose();
-      mesh.geometry = new THREE.SphereGeometry(m.radius, 32, 32);
     }
   });
 
@@ -837,10 +929,11 @@ window.addEventListener('pointerup', (e) => {
   raycaster.setFromCamera(mouse, camera);
 
   const meshes = Array.from(massMeshesMap.values());
-  const intersects = raycaster.intersectObjects(meshes, false);
+  const intersects = raycaster.intersectObjects(meshes, true);
 
   if (intersects.length > 0) {
-    const hitId = intersects[0].object.userData.massId;
+    const hitObj = intersects[0].object;
+    const hitId = hitObj.userData.massId || (hitObj.parent && hitObj.parent.userData.massId);
     if (hitId) {
       attachGizmoToMass(hitId);
     }
@@ -1435,7 +1528,7 @@ if (btnAddMass) {
     const newId = String(Date.now()).slice(-6);
     const color = MASS_COLORS[masses.length % MASS_COLORS.length];
     const offset = (masses.length % 2 === 0 ? 1 : -1) * (16 + masses.length * 4);
-    const textureTypes = ['sun', 'earth', 'jupiter', 'moon', 'crystal', 'blackhole'];
+    const textureTypes = ['hologram', 'pulsar', 'singularity', 'quantum_wire', 'dark_matter', 'plasma_star'];
     const newMass = {
       id: newId,
       position: new THREE.Vector3(offset, 0, (Math.random() - 0.5) * 16),
@@ -1780,8 +1873,8 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0, 0, 0),
           radius: 8.0,
           mass: 80.0,
-          textureType: 'earth',
-          color: 0x3498DB,
+          textureType: 'hologram',
+          color: 0x00E5FF,
           basePos: new THREE.Vector3(0, 0, 0),
           baseVel: new THREE.Vector3(0, 0, 0),
           orbitAngle: 0,
@@ -1793,7 +1886,7 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0, 0, 2.77),
           radius: 2.8,
           mass: 1.0,
-          textureType: 'moon',
+          textureType: 'quantum_wire',
           color: 0xBDC3C7,
           basePos: new THREE.Vector3(26, 0, 0),
           baseVel: new THREE.Vector3(0, 0, 2.77),
@@ -1818,7 +1911,7 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0, 0, 0),
           radius: 4.0, // 视界极小
           mass: 180.0, // 引力质量巨大
-          textureType: 'blackhole',
+          textureType: 'singularity',
           color: 0x111111,
           basePos: new THREE.Vector3(0, 0, 0),
           baseVel: new THREE.Vector3(0, 0, 0),
@@ -1843,7 +1936,7 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0, 0, -1.8),
           radius: 6.0,
           mass: 30.0,
-          textureType: 'sun',
+          textureType: 'plasma_star',
           color: 0xF39C12,
           basePos: new THREE.Vector3(-22, 0, 0),
           baseVel: new THREE.Vector3(0, 0, -1.8),
@@ -1856,8 +1949,8 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0, 0, 1.8),
           radius: 6.0,
           mass: 30.0,
-          textureType: 'jupiter',
-          color: 0x3498DB,
+          textureType: 'hologram',
+          color: 0x00A8FF,
           basePos: new THREE.Vector3(22, 0, 0),
           baseVel: new THREE.Vector3(0, 0, 1.8),
           orbitAngle: 0,
@@ -1885,8 +1978,8 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0.40, 1.25, -0.30),
           radius: 5.5,
           mass: 36.0,
-          textureType: 'sun',
-          color: 0xE74C3C,
+          textureType: 'pulsar',
+          color: 0xFF3366,
           basePos: new THREE.Vector3(-16.0, 3.0, 4.0),
           baseVel: new THREE.Vector3(0.40, 1.25, -0.30),
           orbitAngle: 0,
@@ -1898,8 +1991,8 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(-0.80, -1.50, 0.45),
           radius: 4.8,
           mass: 24.0,
-          textureType: 'jupiter',
-          color: 0x3498DB,
+          textureType: 'hologram',
+          color: 0x00FF88,
           basePos: new THREE.Vector3(20.0, -8.0, -5.0),
           baseVel: new THREE.Vector3(-0.80, -1.50, 0.45),
           orbitAngle: Math.PI * 2 / 3,
@@ -1911,8 +2004,8 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0.30, -0.5625, 0.0),
           radius: 3.8,
           mass: 16.0,
-          textureType: 'crystal',
-          color: 0xF1C40F,
+          textureType: 'dark_matter',
+          color: 0xFFCC00,
           basePos: new THREE.Vector3(6.0, 10.0, 1.5),
           baseVel: new THREE.Vector3(0.30, -0.5625, 0.0),
           orbitAngle: Math.PI * 4 / 3,
@@ -1940,8 +2033,8 @@ function applyPreset(type) {
           velocity: new THREE.Vector3(0, 0, 0),
           radius: 5.0,
           mass: 15.0,
-          textureType: 'sun',
-          color: 0xF39C12,
+          textureType: 'hologram',
+          color: 0x00E5FF,
           basePos: new THREE.Vector3(0, 0, 0),
           baseVel: new THREE.Vector3(0, 0, 0),
           orbitAngle: 0,
@@ -2042,10 +2135,39 @@ function updateStatsDisplay() {
   statGridRes.textContent = `${currentDivs}³`;
 }
 
-// 关于弹窗交互
-btnOpenAbout.addEventListener('click', () => aboutModal.classList.remove('hidden'));
-btnCloseAbout.addEventListener('click', () => aboutModal.classList.add('hidden'));
-btnBackToSim.addEventListener('click', () => aboutModal.classList.add('hidden'));
+// 关于弹窗交互 (支持关闭按钮、底部按钮、点击背景遮罩与 ESC 快捷键四种关闭方式)
+function closeAboutModal() {
+  if (aboutModal) aboutModal.classList.add('hidden');
+}
+function openAboutModal() {
+  if (aboutModal) aboutModal.classList.remove('hidden');
+}
+
+if (btnOpenAbout) btnOpenAbout.addEventListener('click', openAboutModal);
+if (btnCloseAbout) {
+  btnCloseAbout.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAboutModal();
+  });
+}
+if (btnBackToSim) {
+  btnBackToSim.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeAboutModal();
+  });
+}
+if (aboutModal) {
+  aboutModal.addEventListener('click', (e) => {
+    if (e.target === aboutModal) {
+      closeAboutModal();
+    }
+  });
+}
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && aboutModal && !aboutModal.classList.contains('hidden')) {
+    closeAboutModal();
+  }
+});
 
 // 浮动 Tooltip 管理
 const floatingTooltip = document.getElementById('floating-tooltip');
@@ -2103,6 +2225,13 @@ function animate(now) {
 
   // 4. 粒子受引力物理更新 (含黑洞事件视界与宇宙吸积流场)
   updateParticles(dt);
+
+  // 5. 天体全息扫描线与测地线框自转微动态更新
+  massMeshesMap.forEach(group => {
+    if (group && group.userData && group.userData.updateAnimation) {
+      group.userData.updateAnimation(elapsedTime, dt);
+    }
+  });
 
   renderer.render(scene, camera);
 }
