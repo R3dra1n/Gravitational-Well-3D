@@ -1,0 +1,36 @@
+{
+  "name": "gravitational-well-3d",
+  "version": "2.0.0",
+  "description": "Enhanced 3D Gravitational Spacetime Lattice & Multi-Body Chaos Simulation based on rafaehlers/Gravitational-Well-3D",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/R3dra1n/Gravitational-Well-3D.git"
+  },
+  "keywords": [
+    "threejs",
+    "gravity",
+    "physics",
+    "spacetime",
+    "lattice",
+    "n-body",
+    "three-body-problem",
+    "chaos",
+    "simulation",
+    "webgl"
+  ],
+  "author": "R3dra1n (forked & enhanced from rafaehlers)",
+  "license": "MIT",
+  "dependencies": {
+    "lil-gui": "^0.20.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gravitational Well 3D - Multi-Body Spacetime Topology</title>
+  <link rel="stylesheet" href="./src/style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-black text-white overflow-hidden select-none">
+  <!-- 3D 渲染主画布 -->
+  <div id="canvas-container">
+    <canvas id="webgl-canvas"></canvas>
+  </div>
+
+  <!-- 左侧悬浮控制面板 (Floating Sidebar) -->
+  <aside class="sidebar-panel">
+    <!-- 面板标题 -->
+    <div class="panel-header">
+      <h2 class="panel-title">CONTROL PANEL</h2>
+      <div class="status-indicator"></div>
+    </div>
+
+    <!-- 滚动参数内容区 -->
+    <div class="panel-body custom-scrollbar">
+      <!-- 1. 模拟网格设置 (Simulation) -->
+      <section class="control-section">
+        <h3 class="section-title">SIMULATION</h3>
+
+        <!-- 网格细分 Divisions -->
+        <div class="control-group">
+          <div class="control-label-row">
+            <div class="label-with-tip">
+              <label>DIVISIONS</label>
+              <span class="info-tip" data-tip="时空网格的几何线密度。密度越高，引力弯曲曲率越平滑精细。">ℹ</span>
+            </div>
+            <span id="val-divs" class="value-badge neon-emerald">20</span>
+          </div>
+          <input type="range" id="slider-divs" min="1" max="60" value="20" class="custom-range range-emerald" />
+        </div>
+
+        <!-- 空间尺度 Grid Bounds -->
+        <div class="control-group">
+          <div class="control-label-row">
+            <div class="label-with-tip">
+              <label>GRID BOUNDS (空间范围)</label>
+              <span class="info-tip" data-tip="时空网格的三维尺寸范围（立方体半长），可将整个宇宙观察空间成倍扩展放大。">ℹ</span>
+            </div>
+            <span id="val-bounds" class="value-badge neon-emerald">50</span>
+          </div>
+          <input type="range" id="slider-bounds" min="30" max="250" step="5" value="50" class="custom-range range-emerald" />
+        </div>
+
+        <!-- 网格透明度 Grid Alpha -->
+        <div class="control-group">
+          <div class="control-label-row">
+            <div class="label-with-tip">
+              <label>GRID ALPHA</label>
+              <span class="info-tip" data-tip="控制时空网格线的透明度。">ℹ</span>
+            </div>
+            <span id="val-alpha" class="value-badge neon-emerald">1.00</span>
+          </div>
+          <input type="range" id="slider-alpha" min="0" max="1" step="0.01" value="1.0" class="custom-range range-emerald" />
+        </div>
+
+        <!-- 网格拓扑形态 Grid Topology -->
+        <div class="control-group">
+          <div class="label-with-tip mb-1">
+            <label>GRID TOPOLOGY (网格拓扑形态)</label>
+            <span class="info-tip" data-tip="选择时空坐标系的几何拓扑：Cartesian 3D 为经典直角网格；Spherical 360° 为同心引力壳层+全向辐射线。">ℹ</span>
+          </div>
+          <select id="select-grid-topology" class="custom-select select-mini">
+            <option value="cartesian" selected>Cartesian 3D (经典直角网格)</option>
+            <option value="spherical">Spherical 360° (全方位球极引力网格)</option>
+          </select>
+        </div>
+
+        <!-- 等势能色彩与对角交叉线辅助 -->
+        <div class="toggle-row mt-2">
+          <div class="label-with-tip">
+            <span class="toggle-label">POTENTIAL HALO (等势能色谱)</span>
+            <span class="info-tip" data-tip="根据引力势能标量场实时渲染连续色彩等势光晕，自然显现 360° 球对称引力场，彻底破除轴向平面错觉。">ℹ</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="check-potential-halo" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <!-- 色谱模式选择 -->
+        <div class="control-group mt-1">
+          <div class="label-with-tip mb-1">
+            <label>SPECTRUM PALETTE (光谱模式)</label>
+            <span class="info-tip" data-tip="引力势能色彩映射逻辑：Accretion Heat 为吸积热辐射（蓝→金→白炽）；Redshift 为广义相对论引力红移（蓝白→橙红→暗红）；Escape & Shadow 为光线逃逸暗影（远景亮白→视界黑洞暗化）。">ℹ</span>
+          </div>
+          <select id="select-spectrum-palette" class="custom-select select-mini">
+            <option value="0" selected>Accretion Heat (吸积热辐射: 蓝→金→白炽)</option>
+            <option value="1">Gravitational Redshift (引力红移: 蓝白→橙红→暗红)</option>
+            <option value="2">Escape & Shadow (光逃逸暗影: 亮白→灰银→黑洞暗影)</option>
+            <option value="3">Monochrome (经典单色电光青)</option>
+          </select>
+        </div>
+
+        <div class="toggle-row mt-1">
+          <div class="label-with-tip">
+            <span class="toggle-label">CROSS DIAGONALS (对角交叉线)</span>
+            <span class="info-tip" data-tip="在笛卡尔网格中加入 45° 空间交叉线，破除 X/Y/Z 三轴单一性，呈现全向编织立体网格。">ℹ</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="check-diagonals">
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <!-- 场景预设 Presets -->
+        <div class="control-group">
+          <div class="label-with-tip mb-1">
+            <label>PRESETS</label>
+            <span class="info-tip" data-tip="经典天体引力系统预设。">ℹ</span>
+          </div>
+          <select id="select-preset" class="custom-select">
+            <option value="" disabled selected>Select Preset</option>
+            <option value="earthmoon">Earth & Moon (地月稳定公转)</option>
+            <option value="binary">Binary Stars (双星引力系统)</option>
+            <option value="triple">Triple System (三星混沌体系)</option>
+            <option value="blackhole">Black Hole (大质量黑洞)</option>
+            <option value="grid">Standard Well (标准引力势阱)</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- 2. 天体管理与物理属性 (Celestial Bodies) -->
+      <section class="control-section">
+        <h3 class="section-title">CELESTIAL BODIES</h3>
+
+        <div class="btn-select-row">
+          <button id="btn-add-mass" class="btn-action">+ BODY</button>
+          <button id="btn-deselect-mass" class="btn-action" title="取消选中天体并隐藏三维坐标轴">✕ DESELECT</button>
+          <select id="select-active-mass" class="custom-select flex-1">
+            <option value="1">Body 1</option>
+          </select>
+        </div>
+
+        <!-- 当前选中天体的参数卡片 -->
+        <div class="sub-card mt-2">
+          <div class="sub-card-header">
+            <span class="sub-card-title">BODY PROPERTIES</span>
+            <button id="btn-delete-mass" class="btn-delete">DELETE</button>
+          </div>
+
+          <!-- 外观贴图类型 Texture Appearance -->
+          <div class="control-group">
+            <div class="label-with-tip mb-1">
+              <label>SURFACE TEXTURE (外观贴图)</label>
+              <span class="info-tip" data-tip="天体的表面材质与纹理贴图：恒星日冕、类地海洋大陆、气态条纹、月坑岩石、黑洞视界等。">ℹ</span>
+            </div>
+            <select id="select-texture-type" class="custom-select select-mini">
+              <option value="sun">🌞 Sun (恒星 / 炽热日冕)</option>
+              <option value="earth">🌍 Earth (类地 / 蔚蓝大气)</option>
+              <option value="jupiter">🪐 Jupiter (气态 / 涡旋条纹)</option>
+              <option value="moon">🌑 Moon (月球 / 陨坑表面)</option>
+              <option value="blackhole">🕳️ Black Hole (黑洞 / 视界奇点)</option>
+              <option value="crystal">💎 Crystal (半透微晶玻璃)</option>
+            </select>
+          </div>
+
+          <!-- 视觉半径 Visual Radius (几何大小) -->
+          <div class="control-group">
+            <div class="control-label-row">
+              <div class="label-with-tip">
+                <label>RADIUS (视觉半径 R)</label>
+                <span class="info-tip" data-tip="天体的几何体积大小。与质量完全独立（如黑洞体积极小而引力巨大，红巨星体积极大而密度极低）。">ℹ</span>
+              </div>
+              <span id="val-radius" class="value-badge neon-emerald">5.0</span>
+            </div>
+            <input type="range" id="slider-radius" min="1" max="30" step="0.5" value="5" class="custom-range range-emerald" />
+          </div>
+
+          <!-- 物理引力质量 Gravitational Mass -->
+          <div class="control-group">
+            <div class="control-label-row">
+              <div class="label-with-tip">
+                <label>MASS (引力质量 M)</label>
+                <span class="info-tip" data-tip="天体的真实引力质量。直接决定引力牵引力 F=GMm/r² 与时空漏斗塌陷深度。支持直接键盘输入任意数值，已彻底开放上限。">ℹ</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <input type="number" id="num-mass" min="1" max="100000" step="1" value="10" class="input-number" style="width: 60px; text-align: right; padding: 2px 4px; font-size: 0.75rem;" />
+              </div>
+            </div>
+            <input type="range" id="slider-mass" min="1" max="2000" step="1" value="10" class="custom-range range-emerald" />
+          </div>
+
+          <!-- 坐标设置与手动精确输入 (Coordinates X, Y, Z) -->
+          <div class="control-group">
+            <div class="label-with-tip mb-1">
+              <label>POSITION (坐标 X, Y, Z)</label>
+              <span class="info-tip" data-tip="天体在三维空间中的具体坐标。可在 3D 视图中直接鼠标拖拽，也可直接在此精确输入数字。">ℹ</span>
+            </div>
+            <div class="coord-inputs-row">
+              <div class="coord-field">
+                <span class="coord-tag">X</span>
+                <input type="number" id="num-pos-x" step="0.5" class="input-number" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-tag">Y</span>
+                <input type="number" id="num-pos-y" step="0.5" class="input-number" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-tag">Z</span>
+                <input type="number" id="num-pos-z" step="0.5" class="input-number" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 速度设置与手动精确输入 (Velocity Vx, Vy, Vz) -->
+          <div class="control-group">
+            <div class="label-with-tip mb-1">
+              <label>VELOCITY (速度 Vx, Vy, Vz)</label>
+              <span class="info-tip" data-tip="天体的三维速度矢量。可直接手动输入切向初速度测试引力公转或逃逸。">ℹ</span>
+            </div>
+            <div class="coord-inputs-row">
+              <div class="coord-field">
+                <span class="coord-tag">Vx</span>
+                <input type="number" id="num-vel-x" step="0.1" class="input-number" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-tag">Vy</span>
+                <input type="number" id="num-vel-y" step="0.1" class="input-number" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-tag">Vz</span>
+                <input type="number" id="num-vel-z" step="0.1" class="input-number" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 动力学、运动模式与碰撞机制 (Dynamics & Motion) -->
+      <section class="control-section">
+        <h3 class="section-title">DYNAMICS & MOTION</h3>
+
+        <!-- 运动模式选择 -->
+        <div class="control-group">
+          <div class="label-with-tip mb-1">
+            <label>MOTION MODE</label>
+            <span class="info-tip" data-tip="选择天体系统的运行法则。推荐使用 True N-Body Gravity 观察纯自然万有引力动力学。">ℹ</span>
+          </div>
+          <select id="select-motion-mode" class="custom-select">
+            <option value="nbody" selected>True N-Body (真实引力互动 - 自由互吸)</option>
+            <option value="orbit">Keplerian Orbit (开普勒质心公转)</option>
+            <option value="static">Static / 3D Drag (手动拖拽 / 静止)</option>
+            <option value="cruise">Demo Cruise (固定轨迹平滑巡航)</option>
+          </select>
+        </div>
+
+        <!-- 碰撞处理机制 Collision Handling -->
+        <div class="control-group">
+          <div class="label-with-tip mb-1">
+            <label>COLLISION MODE (碰撞机制)</label>
+            <span class="info-tip" data-tip="两球相互碰撞时的物理行为：Merge 会根据动量守恒与质量守恒合并为大天体；Bounce 会弹性反弹；Pass 会像点源一样穿透。">ℹ</span>
+          </div>
+          <select id="select-collision-mode" class="custom-select select-mini">
+            <option value="merge" selected>Merge (碰撞吞噬合并 - 质量动量守恒)</option>
+            <option value="bounce">Bounce (弹性反弹)</option>
+            <option value="pass">Pass (无碰撞穿透)</option>
+          </select>
+        </div>
+
+        <!-- 模拟速度 / 时间流速 -->
+        <div class="control-group">
+          <div class="control-label-row">
+            <div class="label-with-tip">
+              <label>SIMULATION SPEED</label>
+              <span class="info-tip" data-tip="调节物理模拟的时间推进倍率。">ℹ</span>
+            </div>
+            <span id="val-motion-speed" class="value-badge neon-emerald">1.0x</span>
+          </div>
+          <input type="range" id="slider-motion-speed" min="0.1" max="3.0" step="0.1" value="1.0" class="custom-range range-emerald" />
+        </div>
+
+        <!-- 运动控制按钮组 -->
+        <div class="btn-group-row">
+          <button id="btn-toggle-motion" class="btn-action flex-2">⏸ 暂停运动</button>
+          <button id="btn-reset-positions" class="btn-action flex-1">↺ 归位</button>
+          <button id="btn-randomize" class="btn-action flex-1" title="在空间中随机生成天体的初始坐标与互补初速度">🎲 随机</button>
+        </div>
+
+        <!-- 天体运行轨迹线 (Celestial Orbit Trails) -->
+        <div class="toggle-row mt-3">
+          <div class="label-with-tip">
+            <span class="toggle-label">ORBIT TRAILS (轨迹线)</span>
+            <span class="info-tip" data-tip="在天体移动时绘制高光渐变离子拖尾，清晰展示其受引力影响的运动路径。">ℹ</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="check-mass-trails" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+        <div class="mt-1">
+          <button id="btn-clear-trails" class="btn-mini-action">CLEAR TRAILS (清空轨迹)</button>
+        </div>
+
+        <!-- 速度与逃逸分析仪表盘 (Velocity HUD) -->
+        <div class="sub-card mt-3">
+          <div class="sub-card-header">
+            <span class="sub-card-title">VELOCITY & ESCAPE</span>
+            <span id="badge-velocity-status" class="hud-badge badge-neutral">CALCULATING</span>
+          </div>
+
+          <div class="hud-stats-grid">
+            <div class="hud-stat-item">
+              <span class="hud-stat-label">CURRENT V (当前)</span>
+              <span id="hud-val-vcur" class="hud-stat-val neon-emerald">0.00</span>
+            </div>
+            <div class="hud-stat-item">
+              <span class="hud-stat-label">ORBIT V (环绕)</span>
+              <span id="hud-val-vorb" class="hud-stat-val neon-emerald">--</span>
+            </div>
+            <div class="hud-stat-item">
+              <span class="hud-stat-label">ESCAPE V (逃逸)</span>
+              <span id="hud-val-vesc" class="hud-stat-val neon-emerald">--</span>
+            </div>
+          </div>
+
+          <div class="btn-group-row mt-1">
+            <button id="btn-inject-orbit-v" class="btn-mini-action" title="注入稳定切向公转速度（第一宇宙速度）">⚡ 注入环绕速度</button>
+            <button id="btn-inject-escape-v" class="btn-mini-action" title="赋予超过逃逸极限的初速度（第二宇宙速度）">🚀 注入逃逸速度</button>
+            <button id="btn-zero-v" class="btn-mini-action" title="速度归零，观测受引力笔直加速下坠">🛑 刹停</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 物理与引力波 (Physics & Waves) -->
+      <section class="control-section">
+        <h3 class="section-title">PHYSICS & WAVES</h3>
+
+        <!-- 开启空间变形 Deform Space -->
+        <div class="toggle-row">
+          <div class="label-with-tip">
+            <span class="toggle-label">DEFORM SPACE</span>
+            <span class="info-tip" data-tip="广义相对论核心：质量造成的三维时空几何弯曲。">ℹ</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="check-deform" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <!-- 深入球体内部汇入球心 Plunge Into Core -->
+        <div class="toggle-row">
+          <div class="label-with-tip">
+            <span class="toggle-label">PLUNGE INTO CORE (汇入球心)</span>
+            <span class="info-tip" data-tip="开启后，引力网格线深入穿透进球体核心质心，不再生硬地贴在外壳表面。">ℹ</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="check-penetrate-core" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <!-- 全局引力常数倍率 Intensity (G) -->
+        <div class="control-group">
+          <div class="control-label-row">
+            <div class="label-with-tip">
+              <label>INTENSITY (引力常数 G)</label>
+              <span class="info-tip" data-tip="宇宙万有引力常数 (G) 的全局放大倍率。决定整个宇宙所有质量之间的相互引力尺度（F=G·M·m/r²）。支持直接键盘输入任意数值，已彻底开放上限。">ℹ</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <input type="number" id="num-intensity" min="0.1" max="1000" step="0.1" value="1.0" class="input-number" style="width: 60px; text-align: right; padding: 2px 4px; font-size: 0.75rem;" />
+            </div>
+          </div>
+          <input type="range" id="slider-intensity" min="0.1" max="100" step="0.1" value="1.0" class="custom-range range-emerald" />
+        </div>
+
+        <!-- 引力波振幅 Waves -->
+        <div class="control-group">
+          <div class="control-label-row">
+            <div class="label-with-tip">
+              <label>WAVES (引力波纹理)</label>
+              <span class="info-tip" data-tip="加速质量在时空中掀起的动态波动涟漪。">ℹ</span>
+            </div>
+            <span id="val-waves" class="value-badge neon-emerald">0.0</span>
+          </div>
+          <input type="range" id="slider-waves" min="0" max="5" step="0.1" value="0.0" class="custom-range range-emerald" />
+        </div>
+      </section>
+
+      <!-- 5. 测试粒子系统 (Particles) -->
+      <section class="control-section">
+        <div class="label-with-tip mb-2">
+          <h3 class="section-title">TEST PARTICLES</h3>
+          <span class="info-tip" data-tip="向空间注入轻量无质量的测试小粒子，观察它们如何顺应弯曲时空的测地线自然运动。注意：这只影响微观小粒子，不影响大天体本身。">ℹ</span>
+        </div>
+
+        <div class="btn-group-row">
+          <button id="btn-spawn-particles" class="btn-action flex-1">SPAWN (注入粒子)</button>
+          <button id="btn-clear-particles" class="btn-action flex-1">CLEAR (清空)</button>
+        </div>
+
+        <!-- 粒子物理机制与吞噬模式 -->
+        <div class="control-group mt-2">
+          <div class="label-with-tip mb-1">
+            <label>CAPTURE MECHANISM (捕获与吞噬)</label>
+            <span class="info-tip" data-tip="粒子坠入天体核心时的物理行为：Swallow 会被黑洞事件视界/星体表面完全吸积吞噬（绝不再被弹射出来）；Drag 为超密等离子体阻力平稳沉降在球心；Flyby 为纯引力双曲线散射。">ℹ</span>
+          </div>
+          <select id="select-particle-behavior" class="custom-select select-mini">
+            <option value="swallow" selected>Swallow (黑洞视界吞噬 / 星体吸积 - 绝不出来)</option>
+            <option value="drag">Core Drag (超密等离子体阻力沉降在球心)</option>
+            <option value="flyby">Flyby (无碰撞双曲线散射 / 远距弹弓)</option>
+          </select>
+        </div>
+
+        <!-- 粒子循环与重生机制 (Accretion Flow Cycle) -->
+        <div class="control-group mt-1">
+          <div class="label-with-tip mb-1">
+            <label>ACCRETION CYCLE (流场循环模式)</label>
+            <span class="info-tip" data-tip="Recycle: 稳态连续吸积流，粒子被吞噬后在外围重生，展示永不停歇的宇宙星尘流动；Finite: 单次消耗模式，粒子被吞噬后彻底从宇宙消失，直至全部耗尽。">ℹ</span>
+          </div>
+          <select id="select-particle-cycle" class="custom-select select-mini">
+            <option value="recycle" selected>Recycle (连续稳态流 - 吞噬后外围重生)</option>
+            <option value="finite">Finite (单次消耗 - 吞噬后彻底消失)</option>
+          </select>
+        </div>
+
+        <div class="toggle-row mt-3">
+          <div class="label-with-tip">
+            <span class="toggle-label">SIMULATE PARTICLES</span>
+            <span class="info-tip" data-tip="控制测试微观粒子是否受时空引力场吸引做测地线运动。关闭后粒子保持直线匀速漂移。">ℹ</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="check-particles-enabled" checked>
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="footer-row mt-2" style="font-size: 0.72rem; color: #94a3b8; padding: 2px 0;">
+          <span>SWALLOWED (吞噬计数):</span>
+          <span id="stat-swallowed-count" class="text-emerald font-bold">0</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部引擎状态 -->
+    <div class="panel-footer">
+      <div class="footer-row">
+        <span>STATUS</span>
+        <span class="text-emerald font-bold">ACTIVE</span>
+      </div>
+      <div class="footer-row">
+        <span>ENGINE</span>
+        <span>THREE.JS V170</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 右上角状态浮窗 (Top Right Stats) -->
+  <div class="top-stats-card">
+    <div class="stat-row">
+      <span class="stat-label">ACTIVE MASSES</span>
+      <span id="stat-active-masses" class="stat-value neon-emerald">1 / 8</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">GRID RESOLUTION</span>
+      <span id="stat-grid-res" class="stat-value neon-emerald">20³</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">MOTION ENGINE</span>
+      <span id="stat-motion-mode" class="stat-value neon-gold">3D DRAG / STATIC</span>
+    </div>
+  </div>
+
+  <!-- 右下角项目标题 (Bottom Info) -->
+  <div class="bottom-info-card">
+    <h1 class="brand-title">Gravitational Well</h1>
+    <p class="brand-subtitle">MULTI-BODY SPACETIME TOPOLOGY</p>
+    <button id="btn-open-about" class="about-link">Read more about this project</button>
+  </div>
+
+  <!-- 关于项目弹窗 (About Modal) -->
+  <div id="about-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">About this Project</h2>
+        <button id="btn-close-about" class="btn-close-modal">✕</button>
+      </div>
+
+      <div class="modal-body custom-scrollbar">
+        <div class="modal-text">
+          <p>
+            I created this project because I wanted a new way to visualize how gravity really happens in a 3D world like ours.
+          </p>
+          <p>
+            Most educational materials and images found online represent spacetime as a <strong>flat 2D surface</strong> (often called the "rubber sheet" analogy). While useful for beginners, this representation is fundamentally incorrect.
+          </p>
+          <p>
+            In our universe, spacetime isn't a sheet; it's a volumetric fabric that exists in all directions. Gravity doesn't just pull "down"—it warps the very geometry of space around a mass from every possible angle.
+          </p>
+        </div>
+
+        <div class="misconception-section">
+          <h3 class="highlight-title">The "Flat" Misconception</h3>
+          <p class="text-sm opacity-80">
+            A common trap is collapsing a three-dimensional phenomenon onto a single 2D plane, biasing intuition toward thinking gravity "pulls down" into a hole. In reality, massive bodies pull surrounding space inward from 360 degrees.
+          </p>
+        </div>
+
+        <div class="approach-section">
+          <h3 class="highlight-title">A 3D Volumetric Approach</h3>
+          <p class="text-sm leading-relaxed opacity-85">
+            This simulation uses a <strong>3D volumetric grid</strong> to show how mass deforms space in three dimensions. By adjusting the "Divisions" and "Intensity", you can see the topology change not just on a plane, but throughout the volume of the simulation.
+          </p>
+          <p class="text-sm leading-relaxed opacity-85 mt-2">
+            This is a more faithful representation of General Relativity, where <em>matter tells space how to curve, and space tells matter how to move</em> — in all three spatial dimensions.
+          </p>
+        </div>
+
+        <div class="controls-guide-section">
+          <h3 class="highlight-title">Added Features: 3D Drag & Motion</h3>
+          <ul class="guide-feature-list">
+            <li><strong>3D 直接拖拽移动：</strong>在画布中直接点击任意天体球体，激活三维 Gizmo 轴，鼠标直接拖动其在三维网格中的位置！</li>
+            <li><strong>天体轨道公转 (Orbiting)：</strong>支持多星系统绕质心自动旋转，实时展现时空晶格波澜起伏的动态曲率。</li>
+            <li><strong>真实 N 体引力动力学 (N-Body)：</strong>各天体相互受力引力牵引，自然在弯曲时空中互绕或坠落。</li>
+          </ul>
+        </div>
+
+        <div class="modal-footer-author">
+          Based on Rafael de Menezes Ehlers (Gravitational-Well-3D), enhanced with Interactive 3D Sphere Manipulation & Multi-Body Kinematics.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-back-to-sim" class="btn-primary-emerald">Back to Simulation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 浮动 Tooltip 容器 -->
+  <div id="floating-tooltip" class="floating-tooltip hidden"></div>
+
+  <!-- 主程序入口 -->
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
